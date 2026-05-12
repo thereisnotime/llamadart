@@ -398,16 +398,41 @@ class ChatTemplateEngine {
         toolChoice: _toGrammarToolChoice(toolChoice),
       );
       if (grammarResult != null) {
-        // Match llama.cpp generic/content-only behavior: tool grammar is
-        // eagerly applied (non-lazy) for auto/required selection.
+        // For ToolChoice.auto: switch the generic tool grammar to *lazy*
+        // so the model decodes freely until it actually opens a tool-call
+        // envelope. Eager GBNF on every sampling step is the dominant
+        // cost when generating plain content on phone CPU — phones see
+        // 3-5x speedups going from eager → lazy in our benchmarks, which
+        // matches llama.rn / PocketPal behaviour on the same hardware.
+        //
+        // For ToolChoice.required the grammar must be active from the
+        // first token, so we keep eager mode for that case.
+        final useLazy = toolChoice != ToolChoice.required;
+        final triggers = useLazy
+            ? const <GrammarTrigger>[
+                // Pattern triggers (type=2) — first occurrence of any of
+                // these substrings switches GBNF on. They cover the
+                // generic JSON tool-call envelope (`{"tool_call"`),
+                // common XML envelopes (`<tool_call`, `<function`,
+                // `<|python_tag|>`), the Mistral bracket envelope
+                // (`[TOOL_CALLS]`), and Llama-3 builtin-tools style
+                // (`{"name"`).
+                GrammarTrigger(type: 2, value: r'\{\s*"tool_call"'),
+                GrammarTrigger(type: 2, value: r'\{\s*"name"\s*:'),
+                GrammarTrigger(type: 2, value: r'\[TOOL_CALLS\]'),
+                GrammarTrigger(type: 2, value: '<tool_call'),
+                GrammarTrigger(type: 2, value: '<function'),
+                GrammarTrigger(type: 2, value: r'<\|python_tag\|>'),
+              ]
+            : const <GrammarTrigger>[];
         return LlamaChatTemplateResult(
           prompt: result.prompt,
           format: result.format,
           grammar: grammarResult.grammar,
-          grammarLazy: false,
+          grammarLazy: useLazy,
           additionalStops: result.additionalStops,
           preservedTokens: result.preservedTokens,
-          grammarTriggers: const [],
+          grammarTriggers: triggers,
           thinkingForcedOpen: result.thinkingForcedOpen,
           parser: result.parser,
           tokenCount: result.tokenCount,

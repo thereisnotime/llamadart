@@ -56,7 +56,12 @@ void main() {
 
       expect(result.format, equals(ChatFormat.generic.index));
       expect(result.grammar, isNotNull);
-      expect(result.grammarLazy, isFalse);
+      // Tool grammar is lazy-by-default for ToolChoice.auto so plain
+      // content generation isn't constrained per-token. See
+      // chat_template_engine.dart `_normalizeToolGrammar` for the
+      // trigger list.
+      expect(result.grammarLazy, isTrue);
+      expect(result.grammarTriggers, isNotEmpty);
     });
 
     test('uses format-native grammar for format-specific handlers', () {
@@ -208,7 +213,9 @@ void main() {
 
       expect(result.format, equals(ChatFormat.generic.index));
       expect(result.grammar, isNotNull);
-      expect(result.grammarLazy, isFalse);
+      // Auto-mode generic tool grammar is lazy with envelope triggers.
+      expect(result.grammarLazy, isTrue);
+      expect(result.grammarTriggers, isNotEmpty);
       expect(result.additionalStops, contains('<end_of_turn>'));
       expect(result.additionalStops, isNot(contains('<|im_end|>')));
     });

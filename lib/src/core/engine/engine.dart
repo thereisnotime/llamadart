@@ -486,10 +486,23 @@ class LlamaEngine {
         (toolChoice ?? ToolChoice.auto) != ToolChoice.none;
     var streamedContent = '';
     var streamedReasoning = '';
-    const structuredPartialParseInterval = 8;
-    const plainPartialParseProbeInterval = 4;
-    const signalDrivenPartialParseMinTokens = 2;
-    const partialParseMinIntervalMs = 24;
+    // Partial-parse frequency in the *parsed* streaming branch.
+    //
+    // Each partial parse runs the chosen PEG/template handler against the
+    // cumulative `buffer.toString()` on the *caller's* isolate (the main
+    // UI isolate in the PrepBoy embedding). On phone CPU, parsing a few
+    // hundred chars of cumulative output every 8 tokens turned into a
+    // 200-300 ms/sec budget steal during tool-call streams, which the
+    // user perceives as the whole app stuttering during inference.
+    //
+    // Earlier values: structured=8, plain=4, signalMin=2, minMs=24.
+    // The interval bump trades a tiny bit of mid-stream content
+    // freshness (which the post-loop final parse always reconciles
+    // anyway) for a 3-4x drop in main-isolate parse cost on phones.
+    const structuredPartialParseInterval = 24;
+    const plainPartialParseProbeInterval = 32;
+    const signalDrivenPartialParseMinTokens = 4;
+    const partialParseMinIntervalMs = 80;
     var tokensSincePartialParse = 0;
     var sawStructuredOutputSignal = false;
     var didInitialPartialParse = false;
